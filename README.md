@@ -171,7 +171,7 @@ You can run RAGFlow in various ways:
 
 1. **Docker Deployment**: Use the official RAGFlow Docker image:
    ```
-   docker run -d --name ragflow -p 8000:8000 -e "RAGFLOW_API_KEY=your_key" infiniflow/ragflow:latest
+   docker run -d --name ragflow -p 8000:8000 infiniflow/ragflow:latest
    ```
 
    If you want to use Redis for caching (optional):
