@@ -53,7 +53,7 @@ class VectorStore:
         try:
             # Upload document as text blob with metadata
             result = self.dataset.upload_documents([{
-                "name": f"{content_id}.txt",
+                "display_name": f"{content_id}.txt",
                 "blob": text.encode('utf-8'),
                 "metadata": document_metadata
             }])
@@ -83,19 +83,30 @@ class VectorStore:
             List of matching documents with their metadata
         """
         try:
-            # Convert filter criteria to RAGFlow format if needed
-            metadata_filter = filter_criteria if filter_criteria else None
+            # RAGFlow client.retrieve doesn't support filtering by metadata directly
+            # We'll retrieve all results and filter them in Python if needed
+            dataset_ids = [self.dataset.id]
 
             # Retrieve chunks matching the query
-            chunks = self.dataset.retrieve_chunks(
-                query=query,
-                limit=n_results,
-                metadata_filter=metadata_filter
+            chunks = self.client.retrieve(
+                dataset_ids=dataset_ids,
+                question=query,
+                page_size=n_results
             )
 
             # Process and format results
             processed_results = []
             for chunk in chunks:
+                # Skip if filter criteria is set and doesn't match
+                if filter_criteria:
+                    matches_filter = True
+                    for key, value in filter_criteria.items():
+                        if chunk.metadata.get(key) != value:
+                            matches_filter = False
+                            break
+                    if not matches_filter:
+                        continue
+
                 processed_results.append({
                     "id": chunk.id,
                     "content_id": chunk.metadata.get("content_id"),
@@ -104,7 +115,8 @@ class VectorStore:
                     "metadata": {k: v for k, v in chunk.metadata.items() if k != "content_id"}
                 })
 
-            return processed_results
+            # Limit results if we got too many after filtering
+            return processed_results[:n_results]
         except Exception as e:
             logger.error(f"Error searching in RAGFlow: {str(e)}")
             return []
@@ -118,7 +130,7 @@ class VectorStore:
         """
         try:
             # Delete document by ID
-            self.dataset.delete_documents([embedding_id])
+            self.dataset.delete_documents(ids=[embedding_id])
             logger.info(f"Deleted document from RAGFlow: {embedding_id}")
         except Exception as e:
             logger.error(f"Error deleting document from RAGFlow: {str(e)}")
@@ -129,19 +141,23 @@ class VectorStore:
         """
         Update a document in the vector store.
 
+        Note: RAGFlow SDK doesn't have a direct update_document method.
+        We'll delete and then re-add the document.
+
         Args:
             embedding_id: ID of the embedding to update
             text: New text content
             metadata: New metadata
         """
         try:
-            # Update document with new content and metadata
-            self.dataset.update_document(
-                id=embedding_id,
-                content=text,
-                metadata=metadata
-            )
-            logger.info(f"Updated document in RAGFlow: {embedding_id}")
+            # First, delete the existing document
+            self.delete_document(embedding_id)
+
+            # Then add a new document
+            content_id = metadata.get("content_id", str(uuid.uuid4()))
+            new_id = self.add_document(content_id, text, metadata)
+
+            logger.info(f"Updated document in RAGFlow: {embedding_id} -> {new_id}")
         except Exception as e:
             logger.error(f"Error updating document in RAGFlow: {str(e)}")
             raise

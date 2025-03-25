@@ -7,7 +7,6 @@ import pytest
 class TestDockerContainers(unittest.TestCase):
     """Test that all required Docker containers are running."""
 
-    @pytest.mark.skipif(not os.environ.get("TEST_DOCKER", False), reason="Docker tests disabled")
     def setUp(self):
         """Check if docker command is available."""
         try:
@@ -28,7 +27,6 @@ class TestDockerContainers(unittest.TestCase):
                 containers.append(json.loads(line))
         return containers
 
-    @pytest.mark.skipif(not os.environ.get("TEST_DOCKER", False), reason="Docker tests disabled")
     def test_ragflow_container_running(self):
         """Test if RAGFlow container is running."""
         containers = self._get_containers()
@@ -46,7 +44,6 @@ class TestDockerContainers(unittest.TestCase):
             "No RAGFlow containers found. Make sure the RAGFlow Docker container is running."
         )
 
-    @pytest.mark.skipif(not os.environ.get("TEST_DOCKER", False), reason="Docker tests disabled")
     def test_elasticsearch_container_running(self):
         """Test if Elasticsearch container for RAGFlow is running."""
         containers = self._get_containers()
@@ -64,7 +61,6 @@ class TestDockerContainers(unittest.TestCase):
             "No Elasticsearch containers found for RAGFlow. RAGFlow may not function correctly."
         )
 
-    @pytest.mark.skipif(not os.environ.get("TEST_DOCKER", False), reason="Docker tests disabled")
     def test_minio_container_running(self):
         """Test if MinIO container for RAGFlow is running."""
         containers = self._get_containers()
@@ -80,7 +76,6 @@ class TestDockerContainers(unittest.TestCase):
             "No MinIO containers found for RAGFlow. Document storage may not function correctly."
         )
 
-    @pytest.mark.skipif(not os.environ.get("TEST_DOCKER", False), reason="Docker tests disabled")
     def test_mysql_container_running(self):
         """Test if MySQL container for RAGFlow is running."""
         containers = self._get_containers()
@@ -98,7 +93,6 @@ class TestDockerContainers(unittest.TestCase):
             "No MySQL containers found for RAGFlow. RAGFlow metadata storage may not function correctly."
         )
 
-    @pytest.mark.skipif(not os.environ.get("TEST_DOCKER", False), reason="Docker tests disabled")
     def test_redis_container_running(self):
         """Test if Redis container is running (if used)."""
         # Skip if REDIS_URL is not configured to use Docker

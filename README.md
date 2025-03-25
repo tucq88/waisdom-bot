@@ -174,6 +174,21 @@ You can run RAGFlow in various ways:
    docker run -d --name ragflow -p 8000:8000 infiniflow/ragflow:latest
    ```
 
+   For Apple Silicon (M1/M2) Macs, the standard Docker image won't work. You need to build it locally:
+   ```bash
+   # Clone the repository
+   git clone https://github.com/infiniflow/ragflow.git
+   cd ragflow/
+
+   # Download dependencies and build for ARM
+   uv run download_deps.py
+   docker build -f Dockerfile.deps -t infiniflow/ragflow_deps .
+   docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:arm-slim .
+
+   # Run the ARM-compatible image
+   docker run -d --name ragflow -p 8000:8000 infiniflow/ragflow:arm-slim
+   ```
+
    If you want to use Redis for caching (optional):
    ```
    # Run Redis container
