@@ -175,3 +175,56 @@ You can run RAGFlow in various ways:
 2. **Local Development Setup**: Follow the installation instructions in the [RAGFlow documentation](https://docs.ragflow.io/getting-started/installation).
 
 For more information on RAGFlow capabilities and configuration options, visit the [official documentation](https://docs.ragflow.io/).
+
+## Verifying Your Setup
+
+Waisdom includes comprehensive verification tools to ensure that all required services are properly configured and running. These tests help you identify and troubleshoot issues with your environment setup.
+
+### Running the Verification Script
+
+```bash
+# To verify services without checking Docker containers
+./verify_setup.sh
+
+# To include Docker container verification
+TEST_DOCKER=1 ./verify_setup.sh
+```
+
+The verification script checks:
+
+1. **Python Environment**: Verifies Python version and required packages
+2. **Configuration**: Checks for `.env` file and required settings
+3. **Services Availability**:
+   - RAGFlow API connectivity
+   - Redis availability (if configured)
+   - OpenAI API access
+
+4. **Docker Containers** (when `TEST_DOCKER=1`):
+   - RAGFlow server
+   - Elasticsearch
+   - MinIO (document storage)
+   - MySQL (metadata)
+   - Redis (if used)
+
+5. **RAGFlow Client Functionality**:
+   - Creating and deleting collections
+   - Adding and retrieving documents
+   - Searching content
+   - Text generation
+
+### Running Individual Tests
+
+You can also run specific test suites separately:
+
+```bash
+# Test service availability
+python -m pytest tests/test_services.py -v
+
+# Test Docker containers
+TEST_DOCKER=1 python -m pytest tests/test_docker.py -v
+
+# Test RAGFlow client functionality
+python -m pytest tests/test_ragflow_client.py -v
+```
+
+If any tests fail, the script provides detailed error messages to help diagnose and fix issues with your setup.
