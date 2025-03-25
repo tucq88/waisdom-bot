@@ -46,6 +46,11 @@ CONTENT_TYPES = {
     "OTHER": "other"
 }
 
+# RAGFlow Configuration
+RAGFLOW_API_URL = os.getenv("RAGFLOW_API_URL", "http://localhost:8000")
+RAGFLOW_API_KEY = os.getenv("RAGFLOW_API_KEY", "")
+RAGFLOW_COLLECTION_NAME = os.getenv("RAGFLOW_COLLECTION_NAME", "waisdom-content")
+
 # Priority Scoring
 PRIORITY_SCORE_THRESHOLD_HIGH = 8
 PRIORITY_SCORE_THRESHOLD_MEDIUM = 5

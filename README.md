@@ -139,7 +139,39 @@ MIT
 
 ## Acknowledgements
 
-- [LangChain](https://github.com/langchain-ai/langchain)
+- [RAGFlow](https://ragflow.io/) - Retrieval-Augmented Generation engine
 - [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot)
 - [ChromaDB](https://github.com/chroma-core/chroma)
 - [uv](https://github.com/astral-sh/uv) - Fast Python package installer and resolver
+
+## RAGFlow Integration
+
+Waisdom uses [RAGFlow](https://ragflow.io/) as its core Retrieval-Augmented Generation (RAG) engine. RAGFlow provides:
+
+- Advanced document understanding with fine-grained parsing for various formats including PDFs, Word documents, PowerPoint presentations, Excel spreadsheets, and more
+- Superior handling of images and tables within documents
+- Enhanced visibility and explainability through citation links to original content
+- Customizable retrieval methods with vector and full-text search options
+
+### Configuration
+
+To use RAGFlow with Waisdom, add the following to your `.env` file:
+
+```
+RAGFLOW_API_URL=http://your-ragflow-server:port
+RAGFLOW_API_KEY=your_api_key
+RAGFLOW_COLLECTION_NAME=waisdom-content
+```
+
+### Setup Options
+
+You can run RAGFlow in various ways:
+
+1. **Docker Deployment**: Use the official RAGFlow Docker image:
+   ```
+   docker run -d --name ragflow -p 8000:8000 -e "RAGFLOW_API_KEY=your_key" infiniflow/ragflow:latest
+   ```
+
+2. **Local Development Setup**: Follow the installation instructions in the [RAGFlow documentation](https://docs.ragflow.io/getting-started/installation).
+
+For more information on RAGFlow capabilities and configuration options, visit the [official documentation](https://docs.ragflow.io/).

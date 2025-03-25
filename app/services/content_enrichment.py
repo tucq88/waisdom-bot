@@ -1,18 +1,26 @@
 import requests
 from bs4 import BeautifulSoup
-import PyPDF2
 import io
 import re
 from typing import Dict, Any, Optional, Tuple
 import logging
 from urllib.parse import urlparse
+import os
+import tempfile
 
-from app.config.settings import CONTENT_TYPES
+from app.config.settings import CONTENT_TYPES, RAGFLOW_API_URL, RAGFLOW_API_KEY
+from ragflow.client import RAGFlowClient
 
 logger = logging.getLogger(__name__)
 
 class ContentEnrichmentService:
-    """Service for extracting and enriching content from various sources."""
+    """Service for extracting and enriching content from various sources using RAGFlow."""
+
+    def __init__(self):
+        self.ragflow_client = RAGFlowClient(
+            api_url=RAGFLOW_API_URL,
+            api_key=RAGFLOW_API_KEY
+        )
 
     def detect_content_type(self, url: Optional[str] = None,
                            file_extension: Optional[str] = None) -> str:
@@ -50,12 +58,18 @@ class ContentEnrichmentService:
                 return CONTENT_TYPES["IMAGE"]
             elif ext in ["txt", "md", "markdown"]:
                 return CONTENT_TYPES["TEXT"]
+            elif ext in ["doc", "docx"]:
+                return CONTENT_TYPES["WORD"]
+            elif ext in ["ppt", "pptx"]:
+                return CONTENT_TYPES["PRESENTATION"]
+            elif ext in ["xls", "xlsx"]:
+                return CONTENT_TYPES["SPREADSHEET"]
 
         return CONTENT_TYPES["OTHER"]
 
     def extract_from_url(self, url: str) -> Tuple[str, str, Dict[str, Any]]:
         """
-        Extract content from a URL.
+        Extract content from a URL using RAGFlow's document processing.
 
         Args:
             url: URL to extract content from
@@ -65,17 +79,70 @@ class ContentEnrichmentService:
         """
         content_type = self.detect_content_type(url=url)
 
-        if content_type == CONTENT_TYPES["ARTICLE"]:
-            return self._extract_article(url)
-        elif content_type == CONTENT_TYPES["TWEET"]:
-            return self._extract_tweet(url)
-        elif content_type == CONTENT_TYPES["NOTION"]:
-            return self._extract_notion(url)
-        elif content_type == CONTENT_TYPES["PDF"]:
-            return self._extract_pdf_from_url(url)
-        else:
-            # Default extraction
-            return self._extract_article(url)
+        try:
+            # Use RAGFlow's document processing capabilities
+            response = self.ragflow_client.process_url(
+                url=url,
+                extract_images=True,
+                extract_tables=True,
+                detect_language=True
+            )
+
+            # Extract the results
+            if response and "document" in response:
+                doc = response["document"]
+
+                title = doc.get("title", "Untitled")
+                content = doc.get("text", "")
+
+                # Extract metadata
+                metadata = {
+                    "url": url,
+                    "content_type": content_type,
+                    "word_count": len(content.split()),
+                    "has_images": doc.get("has_images", False),
+                    "has_tables": doc.get("has_tables", False),
+                    "language": doc.get("language", "en"),
+                }
+
+                # Add author if available
+                if "author" in doc:
+                    metadata["author"] = doc["author"]
+
+                # Add publication date if available
+                if "date" in doc:
+                    metadata["published_date"] = doc["date"]
+
+                return title, content, metadata
+
+            # Fallback methods if RAGFlow couldn't process the URL directly
+            if content_type == CONTENT_TYPES["PDF"]:
+                return self._extract_pdf_from_url(url)
+            elif content_type == CONTENT_TYPES["ARTICLE"]:
+                return self._extract_article(url)
+            elif content_type == CONTENT_TYPES["TWEET"]:
+                return self._extract_tweet(url)
+            elif content_type == CONTENT_TYPES["NOTION"]:
+                return self._extract_notion(url)
+            else:
+                # Default extraction
+                return self._extract_article(url)
+
+        except Exception as e:
+            logger.error(f"Error extracting content with RAGFlow from {url}: {str(e)}")
+
+            # Fallback to traditional extraction methods
+            if content_type == CONTENT_TYPES["PDF"]:
+                return self._extract_pdf_from_url(url)
+            elif content_type == CONTENT_TYPES["ARTICLE"]:
+                return self._extract_article(url)
+            elif content_type == CONTENT_TYPES["TWEET"]:
+                return self._extract_tweet(url)
+            elif content_type == CONTENT_TYPES["NOTION"]:
+                return self._extract_notion(url)
+            else:
+                # Default extraction
+                return self._extract_article(url)
 
     def _extract_article(self, url: str) -> Tuple[str, str, Dict[str, Any]]:
         """Extract content from an article URL."""
@@ -182,8 +249,77 @@ class ContentEnrichmentService:
             return "Failed to extract PDF content", f"Error extracting content from PDF {url}: {str(e)}", {"url": url, "error": str(e)}
 
     def extract_from_pdf(self, pdf_file, url: Optional[str] = None) -> Tuple[str, str, Dict[str, Any]]:
-        """Extract content from a PDF file."""
+        """Extract content from a PDF file using RAGFlow's advanced document processing."""
         try:
+            # Create a temporary file to store the PDF
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_file:
+                # If pdf_file is a BytesIO object, write its contents to the temp file
+                if isinstance(pdf_file, io.BytesIO):
+                    temp_file.write(pdf_file.getvalue())
+                # If pdf_file is a string (path), copy the contents
+                elif isinstance(pdf_file, str):
+                    with open(pdf_file, 'rb') as f:
+                        temp_file.write(f.read())
+                else:
+                    # If it's already a file object, write its contents
+                    pdf_file.seek(0)
+                    temp_file.write(pdf_file.read())
+
+                temp_file_path = temp_file.name
+
+            try:
+                # Use RAGFlow's document processing
+                response = self.ragflow_client.process_document(
+                    file_path=temp_file_path,
+                    extract_images=True,
+                    extract_tables=True,
+                    detect_language=True
+                )
+
+                # Remove the temporary file
+                os.unlink(temp_file_path)
+
+                # Extract the results
+                if response and "document" in response:
+                    doc = response["document"]
+
+                    title = doc.get("title", "Untitled PDF")
+                    content = doc.get("text", "")
+
+                    # Extract metadata
+                    metadata = {
+                        "word_count": len(content.split()),
+                        "has_images": doc.get("has_images", False),
+                        "has_tables": doc.get("has_tables", False),
+                        "page_count": doc.get("page_count", 0),
+                        "language": doc.get("language", "en"),
+                    }
+
+                    if url:
+                        metadata["url"] = url
+
+                    # Add author if available
+                    if "author" in doc:
+                        metadata["author"] = doc["author"]
+
+                    # Add document structure information if available
+                    if "sections" in doc:
+                        sections = doc.get("sections", [])
+                        metadata["section_count"] = len(sections)
+                        metadata["section_titles"] = [s.get("title", "") for s in sections if "title" in s]
+
+                    return title, content, metadata
+            except Exception as e:
+                logger.error(f"Error using RAGFlow to process PDF: {str(e)}")
+                # If RAGFlow fails, remove the temp file and fall back to PyPDF2
+                if os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
+
+            # Fallback to PyPDF2 if RAGFlow processing failed
+            if isinstance(pdf_file, io.BytesIO):
+                pdf_file.seek(0)  # Reset the file pointer
+
+            import PyPDF2
             pdf_reader = PyPDF2.PdfReader(pdf_file)
 
             # Extract text from all pages

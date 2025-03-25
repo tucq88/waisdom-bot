@@ -6,8 +6,7 @@ setup(
     packages=find_packages(),
     install_requires=[
         "python-telegram-bot>=20.8",
-        "langchain>=0.1.12",
-        "langchain-openai>=0.0.6",
+        "openai>=1.2.0",
         "chromadb>=0.4.23",
         "pydantic>=2.6.3",
         "python-dotenv>=1.0.1",
@@ -21,6 +20,7 @@ setup(
         "uvicorn>=0.27.1",
         "tiktoken>=0.6.0",
         "numpy>=1.26.4",
+        "ragflow-client>=1.0.0",
     ],
     extras_require={
         "dev": [
