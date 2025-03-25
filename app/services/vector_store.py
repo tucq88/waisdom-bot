@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional, Tuple
 import logging
 
 from app.config.settings import RAGFLOW_API_URL, RAGFLOW_API_KEY, RAGFLOW_COLLECTION_NAME
-from ragflow.client import RAGFlowClient
+from ragflow_sdk import RAGFlow
 
 logger = logging.getLogger(__name__)
 
@@ -13,21 +13,23 @@ class VectorStore:
 
     def __init__(self):
         # Initialize RAGFlow client
-        self.client = RAGFlowClient(
-            api_url=RAGFLOW_API_URL,
-            api_key=RAGFLOW_API_KEY
+        self.client = RAGFlow(
+            api_key=RAGFLOW_API_KEY,
+            base_url=RAGFLOW_API_URL
         )
 
-        # Create collection if it doesn't exist
+        # Create dataset if it doesn't exist
         try:
-            self.client.get_collection(RAGFLOW_COLLECTION_NAME)
-            logger.info(f"Using existing RAGFlow collection: {RAGFLOW_COLLECTION_NAME}")
-        except Exception:
-            logger.info(f"Creating new RAGFlow collection: {RAGFLOW_COLLECTION_NAME}")
-            self.client.create_collection(
-                name=RAGFLOW_COLLECTION_NAME,
-                description="Waisdom content repository"
-            )
+            datasets = self.client.list_datasets(name=RAGFLOW_COLLECTION_NAME)
+            if not datasets:
+                self.dataset = self.client.create_dataset(name=RAGFLOW_COLLECTION_NAME)
+                logger.info(f"Created new RAGFlow dataset: {RAGFLOW_COLLECTION_NAME}")
+            else:
+                self.dataset = datasets[0]
+                logger.info(f"Using existing RAGFlow dataset: {RAGFLOW_COLLECTION_NAME}")
+        except Exception as e:
+            logger.error(f"Error initializing RAGFlow dataset: {str(e)}")
+            raise
 
     def add_document(self, content_id: str, text: str, metadata: Dict[str, Any]) -> str:
         """
@@ -41,24 +43,28 @@ class VectorStore:
         Returns:
             embedding_id: Identifier for the embedding
         """
-        embedding_id = str(uuid.uuid4())
-
         # Prepare metadata with content_id
         document_metadata = {
             "content_id": content_id,
             **metadata
         }
 
-        # Add document to RAGFlow collection
+        # Add document to RAGFlow dataset
         try:
-            response = self.client.add_document(
-                collection_name=RAGFLOW_COLLECTION_NAME,
-                document_id=embedding_id,
-                content=text,
-                metadata=document_metadata
-            )
-            logger.info(f"Added document to RAGFlow: {embedding_id}")
-            return embedding_id
+            # Upload document as text blob with metadata
+            result = self.dataset.upload_documents([{
+                "name": f"{content_id}.txt",
+                "blob": text.encode('utf-8'),
+                "metadata": document_metadata
+            }])
+
+            if result and len(result) > 0:
+                doc_id = result[0].id
+                logger.info(f"Added document to RAGFlow: {doc_id}")
+                return doc_id
+            else:
+                logger.error("Document upload returned no results")
+                raise Exception("Document upload failed")
         except Exception as e:
             logger.error(f"Error adding document to RAGFlow: {str(e)}")
             raise
@@ -77,23 +83,25 @@ class VectorStore:
             List of matching documents with their metadata
         """
         try:
-            # Execute search using RAGFlow
-            search_results = self.client.search(
-                collection_name=RAGFLOW_COLLECTION_NAME,
+            # Convert filter criteria to RAGFlow format if needed
+            metadata_filter = filter_criteria if filter_criteria else None
+
+            # Retrieve chunks matching the query
+            chunks = self.dataset.retrieve_chunks(
                 query=query,
                 limit=n_results,
-                filter_criteria=filter_criteria
+                metadata_filter=metadata_filter
             )
 
             # Process and format results
             processed_results = []
-            for result in search_results.get("results", []):
+            for chunk in chunks:
                 processed_results.append({
-                    "id": result.get("document_id"),
-                    "content_id": result.get("metadata", {}).get("content_id"),
-                    "text": result.get("content", ""),
-                    "similarity": result.get("similarity", 0.0),
-                    "metadata": {k: v for k, v in result.get("metadata", {}).items() if k != "content_id"}
+                    "id": chunk.id,
+                    "content_id": chunk.metadata.get("content_id"),
+                    "text": chunk.content,
+                    "similarity": chunk.score,
+                    "metadata": {k: v for k, v in chunk.metadata.items() if k != "content_id"}
                 })
 
             return processed_results
@@ -109,10 +117,8 @@ class VectorStore:
             embedding_id: ID of the embedding to delete
         """
         try:
-            self.client.delete_document(
-                collection_name=RAGFLOW_COLLECTION_NAME,
-                document_id=embedding_id
-            )
+            # Delete document by ID
+            self.dataset.delete_documents([embedding_id])
             logger.info(f"Deleted document from RAGFlow: {embedding_id}")
         except Exception as e:
             logger.error(f"Error deleting document from RAGFlow: {str(e)}")
@@ -129,10 +135,9 @@ class VectorStore:
             metadata: New metadata
         """
         try:
-            # RAGFlow supports direct updates
-            self.client.update_document(
-                collection_name=RAGFLOW_COLLECTION_NAME,
-                document_id=embedding_id,
+            # Update document with new content and metadata
+            self.dataset.update_document(
+                id=embedding_id,
                 content=text,
                 metadata=metadata
             )

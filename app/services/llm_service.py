@@ -2,10 +2,11 @@ import logging
 from typing import List, Dict, Any, Optional
 import json
 from pydantic import BaseModel, Field
+from ragflow_sdk import RAGFlow
 
 from app.config.settings import OPENAI_API_KEY, DEFAULT_AGENT_MODEL, MAX_TOKENS_SUMMARY
 from app.config.settings import RAGFLOW_API_URL, RAGFLOW_API_KEY, RAGFLOW_COLLECTION_NAME
-from ragflow.client import RAGFlowClient
+from app.models.content_summary import ContentSummary, ContentRecommendation
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +22,17 @@ class LLMService:
     """Service for LLM-based content processing using RAGFlow."""
 
     def __init__(self):
-        self.ragflow_client = RAGFlowClient(
-            api_url=RAGFLOW_API_URL,
-            api_key=RAGFLOW_API_KEY
+        self.ragflow = RAGFlow(
+            api_key=RAGFLOW_API_KEY,
+            base_url=RAGFLOW_API_URL
         )
-        self.collection_name = RAGFLOW_COLLECTION_NAME
+
+        # Get or create the dataset
+        datasets = self.ragflow.list_datasets(name=RAGFLOW_COLLECTION_NAME)
+        if datasets:
+            self.dataset = datasets[0]
+        else:
+            self.dataset = self.ragflow.create_dataset(name=RAGFLOW_COLLECTION_NAME)
 
     def summarize_content(self, content: str, metadata: Dict[str, Any]) -> ContentSummary:
         """
@@ -68,17 +75,33 @@ class LLMService:
         """
 
         try:
-            # Use RAGFlow's LLM service for content summarization
-            response = self.ragflow_client.generate_text(
-                system_prompt=system_message,
-                user_prompt=user_message,
+            # Create a chat assistant for the summarization task
+            assistant = self.ragflow.create_chat_assistant(
+                title="Content Summarizer",
                 model=DEFAULT_AGENT_MODEL,
                 temperature=0.1,
-                response_format="json"
+                response_format={"type": "json_object"}
+            )
+
+            # Create a session and send the messages
+            session = assistant.create_session(name="summarization")
+            response = session.converse(
+                system_prompt=system_message,
+                user_prompt=user_message
             )
 
             # Parse the response
-            result = json.loads(response.get("text", "{}"))
+            try:
+                result = json.loads(response.text)
+            except json.JSONDecodeError:
+                # If response is not valid JSON, extract content between curly braces
+                text = response.text
+                start = text.find('{')
+                end = text.rfind('}') + 1
+                if start >= 0 and end > start:
+                    result = json.loads(text[start:end])
+                else:
+                    raise Exception("Invalid JSON response")
 
             return ContentSummary(
                 summary=result.get("summary", "Summary unavailable"),
@@ -109,12 +132,14 @@ class LLMService:
         Returns:
             Answer to the query
         """
-        # Format the relevant content
-        formatted_content = ""
+        # Format the relevant content as context
+        context_docs = []
         for i, content in enumerate(relevant_content):
-            formatted_content += f"\n--- Document {i+1} ---\n"
-            formatted_content += f"Title: {content.get('title', 'Untitled')}\n"
-            formatted_content += f"Content: {content.get('text', '')[:500]}...\n"  # Truncate for prompt space
+            context_docs.append({
+                "title": content.get('title', f'Document {i+1}'),
+                "content": content.get('text', ''),
+                "metadata": content.get('metadata', {})
+            })
 
         system_message = """You are a knowledgeable research assistant with access to a personal knowledge base.
         Answer the user's question based on the relevant content provided. Be concise and specific.
@@ -124,24 +149,23 @@ class LLMService:
         If appropriate, include specific quotes or references from the content to support your answer.
         """
 
-        user_message = f"""Question: {query}
-
-        Here are relevant documents from my knowledge base:
-        {formatted_content}
-
-        Please provide a concise, helpful answer based on this information.
-        """
-
         try:
-            # Use RAGFlow's LLM service to generate an answer
-            response = self.ragflow_client.generate_text(
-                system_prompt=system_message,
-                user_prompt=user_message,
+            # Create a chat assistant for the Q&A task
+            assistant = self.ragflow.create_chat_assistant(
+                title="Q&A Assistant",
                 model=DEFAULT_AGENT_MODEL,
                 temperature=0.1
             )
 
-            return response.get("text", "No answer could be generated.")
+            # Create a session and send the messages with context
+            session = assistant.create_session(name="qa")
+            response = session.converse(
+                system_prompt=system_message,
+                user_prompt=query,
+                context_docs=context_docs
+            )
+
+            return response.text
         except Exception as e:
             logger.error(f"Error generating answer: {str(e)}")
             return f"I encountered an error while trying to answer your question: {str(e)}"
@@ -181,17 +205,32 @@ class LLMService:
         """
 
         try:
-            # Use RAGFlow's LLM service for content recommendations
-            response = self.ragflow_client.generate_text(
-                system_prompt=system_message,
-                user_prompt=user_message,
+            # Create a chat assistant for recommendations
+            assistant = self.ragflow.create_chat_assistant(
+                title="Content Recommender",
                 model=DEFAULT_AGENT_MODEL,
                 temperature=0.2,
-                response_format="json"
+                response_format={"type": "json_object"}
             )
 
-            # Parse the recommendations
-            recommendations = json.loads(response.get("text", "[]"))
+            # Create a session and get recommendations
+            session = assistant.create_session(name="recommendations")
+            response = session.converse(
+                system_prompt=system_message,
+                user_prompt=user_message
+            )
+
+            # Parse the response
+            try:
+                text = response.text
+                start = text.find('[')
+                end = text.rfind(']') + 1
+                if start >= 0 and end > start:
+                    recommendations = json.loads(text[start:end])
+                else:
+                    raise Exception("Invalid JSON response")
+            except json.JSONDecodeError:
+                recommendations = []
 
             # Ensure the response is a list
             if not isinstance(recommendations, list):

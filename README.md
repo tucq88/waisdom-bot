@@ -163,6 +163,8 @@ RAGFLOW_API_KEY=your_api_key
 RAGFLOW_COLLECTION_NAME=waisdom-content
 ```
 
+Note: Waisdom uses the `ragflow-sdk` package (not `ragflow-client`), which is the official Python SDK for RAGFlow.
+
 ### Setup Options
 
 You can run RAGFlow in various ways:

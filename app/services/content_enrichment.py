@@ -7,9 +7,10 @@ import logging
 from urllib.parse import urlparse
 import os
 import tempfile
+import json
 
 from app.config.settings import CONTENT_TYPES, RAGFLOW_API_URL, RAGFLOW_API_KEY
-from ragflow.client import RAGFlowClient
+from ragflow_sdk import RAGFlow
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +18,9 @@ class ContentEnrichmentService:
     """Service for extracting and enriching content from various sources using RAGFlow."""
 
     def __init__(self):
-        self.ragflow_client = RAGFlowClient(
-            api_url=RAGFLOW_API_URL,
-            api_key=RAGFLOW_API_KEY
+        self.ragflow = RAGFlow(
+            api_key=RAGFLOW_API_KEY,
+            base_url=RAGFLOW_API_URL
         )
 
     def detect_content_type(self, url: Optional[str] = None,
@@ -80,42 +81,42 @@ class ContentEnrichmentService:
         content_type = self.detect_content_type(url=url)
 
         try:
-            # Use RAGFlow's document processing capabilities
-            response = self.ragflow_client.process_url(
-                url=url,
+            # Create a document processor
+            processor = self.ragflow.create_document_processor(
                 extract_images=True,
-                extract_tables=True,
-                detect_language=True
+                extract_tables=True
             )
 
-            # Extract the results
-            if response and "document" in response:
-                doc = response["document"]
+            # Process the URL
+            doc_result = processor.process_url(url=url)
 
-                title = doc.get("title", "Untitled")
-                content = doc.get("text", "")
+            # Extract the results
+            if doc_result:
+                title = doc_result.title or "Untitled"
+                content = doc_result.text or ""
 
                 # Extract metadata
                 metadata = {
                     "url": url,
                     "content_type": content_type,
-                    "word_count": len(content.split()),
-                    "has_images": doc.get("has_images", False),
-                    "has_tables": doc.get("has_tables", False),
-                    "language": doc.get("language", "en"),
+                    "word_count": len(content.split()) if content else 0,
+                    "has_images": bool(doc_result.images),
+                    "has_tables": bool(doc_result.tables),
+                    "language": doc_result.language or "en",
                 }
 
                 # Add author if available
-                if "author" in doc:
-                    metadata["author"] = doc["author"]
+                if doc_result.metadata and "author" in doc_result.metadata:
+                    metadata["author"] = doc_result.metadata["author"]
 
                 # Add publication date if available
-                if "date" in doc:
-                    metadata["published_date"] = doc["date"]
+                if doc_result.metadata and "date" in doc_result.metadata:
+                    metadata["published_date"] = doc_result.metadata["date"]
 
                 return title, content, metadata
 
             # Fallback methods if RAGFlow couldn't process the URL directly
+            logger.info(f"RAGFlow processing failed for {url}, using fallback methods")
             if content_type == CONTENT_TYPES["PDF"]:
                 return self._extract_pdf_from_url(url)
             elif content_type == CONTENT_TYPES["ARTICLE"]:
@@ -268,47 +269,46 @@ class ContentEnrichmentService:
                 temp_file_path = temp_file.name
 
             try:
-                # Use RAGFlow's document processing
-                response = self.ragflow_client.process_document(
-                    file_path=temp_file_path,
+                # Create a document processor
+                processor = self.ragflow.create_document_processor(
                     extract_images=True,
-                    extract_tables=True,
-                    detect_language=True
+                    extract_tables=True
                 )
+
+                # Process the PDF file
+                doc_result = processor.process_file(file_path=temp_file_path)
 
                 # Remove the temporary file
                 os.unlink(temp_file_path)
 
                 # Extract the results
-                if response and "document" in response:
-                    doc = response["document"]
-
-                    title = doc.get("title", "Untitled PDF")
-                    content = doc.get("text", "")
+                if doc_result:
+                    title = doc_result.title or "Untitled PDF"
+                    content = doc_result.text or ""
 
                     # Extract metadata
                     metadata = {
-                        "word_count": len(content.split()),
-                        "has_images": doc.get("has_images", False),
-                        "has_tables": doc.get("has_tables", False),
-                        "page_count": doc.get("page_count", 0),
-                        "language": doc.get("language", "en"),
+                        "word_count": len(content.split()) if content else 0,
+                        "has_images": bool(doc_result.images),
+                        "has_tables": bool(doc_result.tables),
+                        "page_count": doc_result.page_count or 0,
+                        "language": doc_result.language or "en",
                     }
 
                     if url:
                         metadata["url"] = url
 
-                    # Add author if available
-                    if "author" in doc:
-                        metadata["author"] = doc["author"]
+                    # Add author if available in metadata
+                    if doc_result.metadata and "author" in doc_result.metadata:
+                        metadata["author"] = doc_result.metadata["author"]
 
                     # Add document structure information if available
-                    if "sections" in doc:
-                        sections = doc.get("sections", [])
-                        metadata["section_count"] = len(sections)
-                        metadata["section_titles"] = [s.get("title", "") for s in sections if "title" in s]
+                    if doc_result.sections:
+                        metadata["section_count"] = len(doc_result.sections)
+                        metadata["section_titles"] = [s.title for s in doc_result.sections if s.title]
 
                     return title, content, metadata
+
             except Exception as e:
                 logger.error(f"Error using RAGFlow to process PDF: {str(e)}")
                 # If RAGFlow fails, remove the temp file and fall back to PyPDF2

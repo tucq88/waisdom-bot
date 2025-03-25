@@ -3,7 +3,7 @@ import os
 import uuid
 from dotenv import load_dotenv
 import pytest
-from ragflow.client import RAGFlowClient
+from ragflow_sdk import RAGFlow
 from app.config.settings import RAGFLOW_API_URL, RAGFLOW_API_KEY, RAGFLOW_COLLECTION_NAME
 
 # Load environment variables from .env file
@@ -15,29 +15,31 @@ class TestRAGFlowClient(unittest.TestCase):
 
     def setUp(self):
         """Set up RAGFlow client and test collection."""
-        self.client = RAGFlowClient(
+        self.client = RAGFlow(
             base_url=RAGFLOW_API_URL,
             api_key=RAGFLOW_API_KEY
         )
 
-        # Create a test collection with a unique name
-        self.test_collection_name = f"test-{uuid.uuid4()}"
-        self.client.create_collection(self.test_collection_name)
+        # Create a test dataset with a unique name
+        self.test_dataset_name = f"test-{uuid.uuid4()}"
+        self.dataset = self.client.create_dataset(name=self.test_dataset_name)
 
     def tearDown(self):
-        """Clean up test collection."""
+        """Clean up test dataset."""
         try:
-            # Delete the test collection
-            self.client.delete_collection(self.test_collection_name)
+            # Find and delete the test dataset
+            datasets = self.client.list_datasets(name=self.test_dataset_name)
+            if datasets:
+                self.client.delete_datasets(ids=[self.dataset.id])
         except Exception:
             pass
 
-    def test_create_and_delete_collection(self):
-        """Test creating and deleting a collection."""
-        # Collection already created in setUp
-        collections = self.client.list_collections()
-        self.assertIn(self.test_collection_name, collections,
-                      f"Test collection {self.test_collection_name} not found in collection list")
+    def test_create_and_delete_dataset(self):
+        """Test creating and deleting a dataset."""
+        # Dataset already created in setUp
+        datasets = self.client.list_datasets(name=self.test_dataset_name)
+        self.assertTrue(len(datasets) > 0,
+                      f"Test dataset {self.test_dataset_name} not found in dataset list")
 
         # Test deletion happens in tearDown
 
@@ -45,7 +47,8 @@ class TestRAGFlowClient(unittest.TestCase):
         """Test adding and retrieving a document."""
         # Add a test document
         test_doc = {
-            "content": "This is a test document for RAGFlow integration",
+            "name": "test-doc.txt",
+            "blob": "This is a test document for RAGFlow integration".encode('utf-8'),
             "metadata": {
                 "content_id": "test-doc-1",
                 "source": "test",
@@ -53,27 +56,23 @@ class TestRAGFlowClient(unittest.TestCase):
             }
         }
 
-        result = self.client.add_documents(
-            collection_name=self.test_collection_name,
-            documents=[test_doc]
-        )
+        result = self.dataset.upload_documents([test_doc])
+        self.assertTrue(len(result) > 0, "Failed to add document")
 
-        self.assertTrue(result.get("success", False),
-                       f"Failed to add document: {result.get('error', 'Unknown error')}")
+        # Wait for processing to complete (in a real test you might need to poll)
 
-        # Search for the document
-        search_results = self.client.search(
-            collection_name=self.test_collection_name,
+        # Retrieve chunks (search)
+        chunks = self.dataset.retrieve_chunks(
             query="test document",
-            top_k=5
+            limit=5
         )
 
-        self.assertTrue(len(search_results) > 0, "No search results found")
+        self.assertTrue(len(chunks) > 0, "No search results found")
 
-        # Check if our document is in the results
+        # Check if our document content is in the results
         found = False
-        for result in search_results:
-            if "test document" in result["content"].lower():
+        for chunk in chunks:
+            if "test document" in chunk.content.lower():
                 found = True
                 break
 
@@ -83,7 +82,8 @@ class TestRAGFlowClient(unittest.TestCase):
         """Test deleting a document."""
         # Add a test document
         test_doc = {
-            "content": "This is a document that will be deleted",
+            "name": "test-doc-delete.txt",
+            "blob": "This is a document that will be deleted".encode('utf-8'),
             "metadata": {
                 "content_id": "test-doc-delete",
                 "source": "test",
@@ -91,47 +91,37 @@ class TestRAGFlowClient(unittest.TestCase):
             }
         }
 
-        self.client.add_documents(
-            collection_name=self.test_collection_name,
-            documents=[test_doc]
-        )
+        result = self.dataset.upload_documents([test_doc])
+        self.assertTrue(len(result) > 0, "Failed to add document")
+        doc_id = result[0].id
 
         # Delete the document
-        delete_result = self.client.delete_documents(
-            collection_name=self.test_collection_name,
-            filter={"metadata.content_id": "test-doc-delete"}
-        )
+        self.dataset.delete_documents([doc_id])
 
-        self.assertTrue(delete_result.get("success", False),
-                       f"Failed to delete document: {delete_result.get('error', 'Unknown error')}")
-
-        # Search to verify deletion
-        search_results = self.client.search(
-            collection_name=self.test_collection_name,
-            query="document that will be deleted",
-            top_k=5
-        )
-
-        # Check if document is no longer in results
-        found = False
-        for result in search_results:
-            if "document that will be deleted" in result["content"].lower():
-                found = True
-                break
-
-        self.assertFalse(found, "Document was not properly deleted")
+        # List documents to verify deletion
+        docs = self.dataset.list_documents(keywords="will be deleted")
+        self.assertEqual(len(docs), 0, "Document was not properly deleted")
 
     def test_generate_text(self):
         """Test generating text with RAGFlow."""
         try:
-            response = self.client.generate_text(
+            # Create a chat assistant
+            assistant = self.client.create_chat_assistant(
+                title="Test Assistant",
+                model="gpt-3.5-turbo"
+            )
+
+            # Create a session
+            session = assistant.create_session(name="test-session")
+
+            # Generate a response
+            response = session.converse(
                 system_prompt="You are a helpful assistant.",
-                user_prompt="What is RAGFlow?",
-                relevant_docs=[]  # No relevant docs needed for this test
+                user_prompt="What is RAGFlow?"
             )
 
             self.assertIsNotNone(response, "No response received from text generation")
-            self.assertTrue(len(response) > 0, "Empty response received from text generation")
+            self.assertTrue(len(response.text) > 0, "Empty response received from text generation")
         except Exception as e:
             self.fail(f"Text generation failed: {str(e)}")
 
