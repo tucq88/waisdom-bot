@@ -172,6 +172,15 @@ You can run RAGFlow in various ways:
    docker run -d --name ragflow -p 8000:8000 -e "RAGFLOW_API_KEY=your_key" infiniflow/ragflow:latest
    ```
 
+   If you want to use Redis for caching (optional):
+   ```
+   # Run Redis container
+   docker run -d --name waisdom-redis -p 6379:6379 redis:7.0
+
+   # Update your .env file
+   REDIS_URL=redis://localhost:6379/0
+   ```
+
 2. **Local Development Setup**: Follow the installation instructions in the [RAGFlow documentation](https://docs.ragflow.io/getting-started/installation).
 
 For more information on RAGFlow capabilities and configuration options, visit the [official documentation](https://docs.ragflow.io/).

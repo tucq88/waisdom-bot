@@ -116,7 +116,7 @@ class TestDockerContainers(unittest.TestCase):
 
         self.assertTrue(
             len(redis_containers) > 0,
-            "No Redis containers found. Make sure the Redis Docker container is running if required."
+            "No Redis containers found. Note: Redis is optional but recommended for caching."
         )
 
 
