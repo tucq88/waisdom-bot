@@ -1,0 +1,47 @@
+from setuptools import setup, find_packages
+
+setup(
+    name="waisdom-bot",
+    version="0.1.0",
+    packages=find_packages(),
+    install_requires=[
+        "python-telegram-bot>=20.8",
+        "langchain>=0.1.12",
+        "langchain-openai>=0.0.6",
+        "chromadb>=0.4.23",
+        "pydantic>=2.6.3",
+        "python-dotenv>=1.0.1",
+        "beautifulsoup4>=4.12.3",
+        "requests>=2.31.0",
+        "PyPDF2>=3.0.1",
+        "markdown>=3.5.2",
+        "redis>=5.0.1",
+        "apscheduler>=3.10.4",
+        "fastapi>=0.109.2",
+        "uvicorn>=0.27.1",
+        "tiktoken>=0.6.0",
+        "numpy>=1.26.4",
+    ],
+    extras_require={
+        "dev": [
+            "pytest>=7.4.3",
+            "black>=24.3.0",
+            "ruff>=0.3.0",
+        ],
+    },
+    python_requires=">=3.9",
+    description="A personal AI research assistant for content curation, summarization, smart recall, and actionable insights",
+    author="Your Name",
+    author_email="your.email@example.com",
+    url="https://github.com/yourusername/waisdom-bot",
+    classifiers=[
+        "Development Status :: 3 - Alpha",
+        "Intended Audience :: End Users/Desktop",
+        "License :: OSI Approved :: MIT License",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+    ],
+)
